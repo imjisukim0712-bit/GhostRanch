@@ -21,5 +21,16 @@
   ```bash
   dotnet publish GhostWidget/GhostWidget.csproj -c Release -o GhostWidget/dist \
     -p:EnableWindowsTargeting=true -p:EnableCompressionInSingleFile=true
+  ```
+
+### 버전 관리
+
+- `GhostWidget/GhostWidget.csproj`의 `<Version>`을 새 빌드마다 patch 버전을 1씩 올립니다 (예: 1.0.0 → 1.0.1).
+- 새로 빌드한 실행 파일은 두 곳에 둡니다:
+  - `releases/GhostWidget-v<버전>.exe` — 해당 버전의 아카이브본. 기존 파일은 절대 덮어쓰거나 지우지 않고 계속 누적합니다.
+  - `./GhostWidget.exe` (최상위 폴더) — 최신 버전으로 항상 덮어씁니다. 버전 번호 없이 "현재 최신"만 가리킵니다.
+  ```bash
+  cp GhostWidget/dist/GhostWidget.exe releases/GhostWidget-v<버전>.exe
   cp GhostWidget/dist/GhostWidget.exe ./GhostWidget.exe
   ```
+- `releases/`는 바이너리가 계속 쌓이는 폴더라 저장소 용량이 매 빌드마다 커집니다. 용량이 부담되면 Git LFS 전환이나 오래된 버전 정리를 사용자와 상의하세요.
