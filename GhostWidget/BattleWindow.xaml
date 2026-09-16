@@ -1,0 +1,60 @@
+<Window x:Class="GhostWidget.BattleWindow"
+        xmlns="http://schemas.microsoft.com/winfx/2006/xaml/presentation"
+        xmlns:x="http://schemas.microsoft.com/winfx/2006/xaml"
+        xmlns:local="clr-namespace:GhostWidget"
+        Width="500" Height="610" WindowStyle="None" AllowsTransparency="True" Background="Transparent"
+        ResizeMode="NoResize" ShowInTaskbar="False" Topmost="True" Loaded="Window_Loaded">
+    <Window.Resources>
+        <Style x:Key="MoveButton" TargetType="Button">
+            <Setter Property="Height" Value="62"/><Setter Property="Margin" Value="4"/>
+            <Setter Property="Background" Value="#34304B"/><Setter Property="Foreground" Value="White"/>
+            <Setter Property="BorderThickness" Value="0"/><Setter Property="FontWeight" Value="Bold"/>
+            <Setter Property="FontSize" Value="12.5"/>
+            <Setter Property="Cursor" Value="Hand"/>
+            <Setter Property="Template"><Setter.Value><ControlTemplate TargetType="Button"><Border x:Name="box" Background="{TemplateBinding Background}" CornerRadius="14" Padding="8"><ContentPresenter HorizontalAlignment="Center" VerticalAlignment="Center"/></Border><ControlTemplate.Triggers><Trigger Property="IsMouseOver" Value="True"><Setter TargetName="box" Property="Opacity" Value="0.83"/></Trigger><Trigger Property="IsEnabled" Value="False"><Setter TargetName="box" Property="Opacity" Value="0.38"/></Trigger></ControlTemplate.Triggers></ControlTemplate></Setter.Value></Setter>
+        </Style>
+    </Window.Resources>
+    <Border x:Name="BattleRoot" Background="#FFFDFC" CornerRadius="25" BorderBrush="#19000000" BorderThickness="1">
+        <Border.Effect><DropShadowEffect Color="#000" BlurRadius="28" ShadowDepth="8" Opacity=".32"/></Border.Effect>
+        <Grid>
+            <Grid.RowDefinitions><RowDefinition Height="73"/><RowDefinition Height="289"/><RowDefinition Height="74"/><RowDefinition Height="*"/></Grid.RowDefinitions>
+            <Border x:Name="HeaderBorder" Background="#17131C" CornerRadius="24,24,0,0" MouseLeftButtonDown="Header_MouseLeftButtonDown">
+                <Grid Margin="24,0,18,0"><StackPanel VerticalAlignment="Center"><TextBlock x:Name="HeaderTitleText" Text="안개 결투장" Foreground="White" FontSize="21" FontWeight="Bold"/><TextBlock x:Name="HeaderSubtitleText" Text="기술을 골라 상대 유령의 HP를 0으로 만드세요" Foreground="#AFA9B5" FontSize="11" Margin="0,3,0,0"/></StackPanel><Button Content="×" HorizontalAlignment="Right" VerticalAlignment="Center" Width="34" Height="34" Click="Close_Click" FontSize="22" Foreground="White" Background="Transparent" BorderThickness="0"/></Grid>
+            </Border>
+            <Border Grid.Row="1" Margin="20,16,20,0" Background="#09080B" CornerRadius="18" ClipToBounds="True">
+                <Grid>
+                    <TextBlock x:Name="TurnText" Text="내 차례" Foreground="#D4C8FF" FontWeight="Bold" FontSize="12" HorizontalAlignment="Center" Margin="0,14,0,0" VerticalAlignment="Top"/>
+                    <StackPanel HorizontalAlignment="Left" VerticalAlignment="Top" Margin="20,38,0,0" Width="185">
+                        <TextBlock x:Name="EnemyNameText" Foreground="White" FontWeight="Bold" FontSize="14"/>
+                        <ProgressBar x:Name="EnemyHpBar" Height="8" Maximum="100" Foreground="#F33B3B" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="EnemyHpText" Foreground="#B9B2C1" FontSize="10" Margin="0,4,0,0"/>
+                        <StackPanel x:Name="EnemyStatusPanel" Orientation="Horizontal" Margin="0,4,0,0">
+                            <TextBlock x:Name="EnemyBurnIcon" Text="🔥" FontSize="12" Margin="0,0,5,0" Visibility="Collapsed"/>
+                            <TextBlock x:Name="EnemyParalyzeIcon" Text="⚡" FontSize="12" Margin="0,0,5,0" Visibility="Collapsed"/>
+                            <TextBlock x:Name="EnemyShieldIcon" Text="🛡" FontSize="12" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <StackPanel HorizontalAlignment="Right" VerticalAlignment="Top" Margin="0,78,20,0" Width="185">
+                        <TextBlock x:Name="PlayerNameText" Foreground="White" FontWeight="Bold" FontSize="14" HorizontalAlignment="Right"/>
+                        <ProgressBar x:Name="PlayerHpBar" Height="8" Maximum="100" Foreground="#65BE6E" Margin="0,6,0,0"/>
+                        <TextBlock x:Name="PlayerHpText" Foreground="#B9B2C1" FontSize="10" Margin="0,4,0,0" HorizontalAlignment="Right"/>
+                        <StackPanel x:Name="PlayerStatusPanel" Orientation="Horizontal" Margin="0,4,0,0" HorizontalAlignment="Right">
+                            <TextBlock x:Name="PlayerBurnIcon" Text="🔥" FontSize="12" Margin="0,0,5,0" Visibility="Collapsed"/>
+                            <TextBlock x:Name="PlayerParalyzeIcon" Text="⚡" FontSize="12" Margin="0,0,5,0" Visibility="Collapsed"/>
+                            <TextBlock x:Name="PlayerShieldIcon" Text="🛡" FontSize="12" Visibility="Collapsed"/>
+                        </StackPanel>
+                    </StackPanel>
+                    <local:GhostArtwork x:Name="EnemyArt" Width="116" Height="132" HorizontalAlignment="Left" VerticalAlignment="Center" Margin="46,33,0,0">
+                        <local:GhostArtwork.RenderTransform><TranslateTransform x:Name="EnemyShakeTransform"/></local:GhostArtwork.RenderTransform>
+                    </local:GhostArtwork>
+                    <local:GhostArtwork x:Name="PlayerArt" Width="112" Height="126" HorizontalAlignment="Right" VerticalAlignment="Bottom" Margin="0,0,30,9">
+                        <local:GhostArtwork.RenderTransform><TranslateTransform x:Name="PlayerShakeTransform"/></local:GhostArtwork.RenderTransform>
+                    </local:GhostArtwork>
+                    <Canvas x:Name="EffectLayer" IsHitTestVisible="False"/>
+                </Grid>
+            </Border>
+            <Border Grid.Row="2" Margin="24,10,24,0" Background="#F1EEF3" CornerRadius="14" Padding="14,9"><TextBlock x:Name="BattleLogText" Text="기술을 선택하세요!" FontSize="12" Foreground="#4B4550" TextWrapping="Wrap" VerticalAlignment="Center"/></Border>
+            <Grid Grid.Row="3" Margin="20,4,20,17"><Grid.RowDefinitions><RowDefinition Height="*"/><RowDefinition Height="32"/></Grid.RowDefinitions><UniformGrid x:Name="MoveGrid" Grid.Row="0" Columns="3"/><Button Grid.Row="1" Content="결투 그만두기" Click="Close_Click" Foreground="#756C7A" Background="Transparent" BorderThickness="0" FontSize="11" Cursor="Hand"/></Grid>
+        </Grid>
+    </Border>
+</Window>
