@@ -122,7 +122,7 @@ public partial class MainWindow : Window
     private DesktopNotificationWindow? contentNotification;
     private bool captureReady;
     private bool battleReady;
-    private DateTime raiseReadyAt = DateTime.Now.AddMinutes(30);
+    private DateTime raiseReadyAt = DateTime.MinValue;
     private readonly Dictionary<string, string[]> dialogueLines = new()
     {
         ["빨강이"] = ["Boo! 내가 먼저 갈게!", "장난 한 번만 치고 올게!"],
@@ -1137,7 +1137,7 @@ public partial class MainWindow : Window
         {
             string? directory = Path.GetDirectoryName(SavePath);
             if (directory is not null) Directory.CreateDirectory(directory);
-            GameSave save = new(level, experience, affection, energy, luna, orbs, wins, ghostIndex, unlockedGhosts.OrderBy(i => i).ToArray(), winStreak, duelsSinceBoss);
+            GameSave save = new(level, experience, affection, energy, luna, orbs, wins, ghostIndex, unlockedGhosts.OrderBy(i => i).ToArray(), winStreak, duelsSinceBoss, raiseReadyAt.Ticks);
             File.WriteAllText(SavePath, JsonSerializer.Serialize(save));
         }
         catch { /* The widget remains playable when storage is unavailable. */ }
@@ -1163,6 +1163,7 @@ public partial class MainWindow : Window
             unlockedGhosts.Add(0);
             foreach (int index in save.UnlockedGhosts.Where(i => i >= 0 && i < ghosts.Length)) unlockedGhosts.Add(index);
             ghostIndex = unlockedGhosts.Contains(save.GhostIndex) ? save.GhostIndex : 0;
+            raiseReadyAt = new DateTime(save.RaiseReadyAtTicks);
             ApplyGhostStyle();
         }
         catch { /* Ignore malformed saves and start from safe defaults. */ }
@@ -1223,4 +1224,4 @@ internal readonly record struct GhostSpecies(
 
 internal sealed record GameSave(
     int Level, int Experience, int Affection, int Energy, int Luna, int Orbs, int Wins,
-    int GhostIndex, int[] UnlockedGhosts, int WinStreak = 0, int DuelsSinceBoss = 0);
+    int GhostIndex, int[] UnlockedGhosts, int WinStreak = 0, int DuelsSinceBoss = 0, long RaiseReadyAtTicks = 0);
