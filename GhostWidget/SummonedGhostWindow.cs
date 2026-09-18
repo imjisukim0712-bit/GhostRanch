@@ -40,7 +40,8 @@ public sealed class SummonedGhostWindow : Window
     private DecorWindow? targetDecorItem;
     private DecorWindow? lastVisitedDecor;
     private DateTime lastVisitedDecorAt = DateTime.MinValue;
-    private DateTime pausedUntil = DateTime.MinValue;
+    private bool playSessionActive;
+    private bool closed;
 
     internal int SpeciesIndex { get; }
 
@@ -145,6 +146,7 @@ public sealed class SummonedGhostWindow : Window
 
     private void Friend_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (playSessionActive) return;
         if (sleeping)
         {
             WakeUp();
@@ -188,25 +190,33 @@ public sealed class SummonedGhostWindow : Window
         if (!dragging) return;
         dragging = false;
         ReleaseMouseCapture();
-        if (FindNearbyDecor() is { } item)
+        if (!playSessionActive && FindNearbyDecor() is { } item)
         {
             flingVelocity = new Vector();
-            lastVisitedDecor = item;
-            lastVisitedDecorAt = DateTime.UtcNow;
-            targetDecorItem = null;
-            pausedUntil = DateTime.UtcNow.AddSeconds(1.2 + random.NextDouble() * .6);
+            PlayWithDecor(item);
             return;
         }
         BeginFling();
     }
 
-    // Dropping a companion on or near a placed decoration settles it in immediately, instead of
-    // waiting on the ambient roam-AI chance in ChooseDestination.
-    private DecorWindow? FindNearbyDecor()
+    private Rect InteractionBounds()
     {
         const double margin = 20;
-        Rect bounds = new(Left - margin, Top - margin, Width + margin * 2, Height + margin * 2);
-        return DecorWindow.PlacedItems.FirstOrDefault(item => bounds.IntersectsWith(item.Bounds));
+        return new Rect(Left - margin, Top - margin, Width + margin * 2, Height + margin * 2);
+    }
+
+    // Dropping a companion on or near a placed decoration plays with it immediately, instead of
+    // waiting on the ambient roam-AI chance in ChooseDestination.
+    private DecorWindow? FindNearbyDecor() =>
+        DecorWindow.PlacedItems.FirstOrDefault(item => InteractionBounds().IntersectsWith(item.Bounds));
+
+    /// <summary>Called by MainWindow.TryPlayWithNearbyDecor when a dragged item lands near this
+    /// companion instead of the main ghost.</summary>
+    internal bool TryPlayWithNearbyDecor(DecorWindow item)
+    {
+        if (sleeping || playSessionActive || item.IsPlaying || !InteractionBounds().IntersectsWith(item.Bounds)) return false;
+        PlayWithDecor(item);
+        return true;
     }
 
     private void ChooseDestination()
@@ -248,6 +258,208 @@ public sealed class SummonedGhostWindow : Window
         return new Rect(position.X, position.Y, Width, Height).IntersectsWith(host);
     }
 
+    // Companions get the same per-item choreography as the main ghost (see MainWindow.PlayWithDecor
+    // and its sequence methods for the equivalents this mirrors), adapted to what a companion window
+    // actually has: no speech bubble (skipped, not replaced), SummonedGhostCanvas.Pulse() instead of
+    // Bounce(), canvas.SetSleeping(...) instead of GhostArtwork.IsSleeping. Purely cosmetic either way.
+    private async void PlayWithDecor(DecorWindow item)
+    {
+        if (playSessionActive || item.IsPlaying) return;
+        lastVisitedDecor = item;
+        lastVisitedDecorAt = DateTime.UtcNow;
+        targetDecorItem = null;
+        playSessionActive = true;
+        item.IsPlaying = true;
+        try
+        {
+            switch (DecorCatalog.Items[item.DecorIndex].Art)
+            {
+                case "SoccerBall": await DribbleSequence(item); break;
+                case "YarnBall": await RollSequence(item); break;
+                case "Frisbee": await ThrowFetchSequence(item); break;
+                case "ToyCar": await AutoLoopSequence(item); break;
+                case "BubbleMachine": await WiggleSequence(item); break;
+                case "Curtain": await PeekabooSequence(item, .10, 900); break;
+                case "TreeStump": await PeekabooSequence(item, .20, 700); break;
+                case "Grave": await PeekabooSequence(item, .55, 1100); break;
+                case "AtticTrunk": await PeekabooSequence(item, .10, 900, midPeek: true); break;
+                case "Cave": await PeekabooSequence(item, .05, 1300); break;
+                case "Hammock": await SettleSequence(item, sleep: true, 1300); break;
+                case "Campfire": await SettleSequence(item, sleep: false, 1200); break;
+                case "Gym": await ExerciseSequence(item); break;
+                case "CafeTable": await SettleSequence(item, sleep: false, 1300); break;
+                case "HotSpring": await SettleSequence(item, sleep: true, 1500); break;
+                default: await SettleSequence(item, sleep: false, 900); break;
+            }
+        }
+        catch (InvalidOperationException)
+        {
+            // "소환 유령 해산" (or the placed item being removed) can close a window mid-sequence;
+            // the next property touch on it throws. Nothing left to do but stop cleanly.
+        }
+        finally
+        {
+            item.IsPlaying = false;
+            playSessionActive = false;
+        }
+        if (!closed) ChooseDestination();
+    }
+
+    private async Task DribbleSequence(DecorWindow item)
+    {
+        Rect area = MainWindow.VirtualDesktopBounds;
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        for (int rep = 0; rep < 4; rep++)
+        {
+            canvas.Pulse();
+            await Task.Delay(110);
+            double angle = random.NextDouble() * Math.PI * 2;
+            double distance = 70 + random.NextDouble() * 55;
+            Point roll = new(
+                Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
+                Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
+            canvas.SetDirection(roll.X >= item.Left ? 1 : -1);
+            await item.AnimateToAsync(roll, 320);
+            await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
+        }
+        canvas.Pulse();
+        await Task.Delay(120);
+        await item.AnimateToAsync(item.HomePosition, 460);
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
+    }
+
+    private async Task RollSequence(DecorWindow item)
+    {
+        Rect area = MainWindow.VirtualDesktopBounds;
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        for (int rep = 0; rep < 3; rep++)
+        {
+            canvas.Pulse();
+            double angle = random.NextDouble() * Math.PI * 2;
+            double distance = 90 + random.NextDouble() * 60;
+            Point roll = new(
+                Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
+                Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
+            canvas.SetDirection(roll.X >= item.Left ? 1 : -1);
+            Task rollTask = item.AnimateToAsync(roll, 560);
+            await Task.Delay(140);
+            await AnimateSelfToAsync(item.ApproachPointFrom(roll, Width, Height), 480);
+            await rollTask;
+        }
+        await item.AnimateToAsync(item.HomePosition, 480);
+    }
+
+    private async Task ThrowFetchSequence(DecorWindow item)
+    {
+        Rect area = MainWindow.VirtualDesktopBounds;
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        canvas.Pulse();
+        await Task.Delay(100);
+        double angle = random.NextDouble() * Math.PI * 2;
+        double distance = 170 + random.NextDouble() * 90;
+        Point landing = new(
+            Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
+            Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
+        canvas.SetDirection(landing.X >= item.Left ? 1 : -1);
+        await item.AnimateToAsync(landing, 480);
+        await Task.Delay(260);
+        await AnimateSelfToAsync(item.ApproachPointFrom(landing, Width, Height), 520);
+        canvas.Pulse();
+        await Task.Delay(120);
+        await item.AnimateToAsync(item.HomePosition, 460);
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
+    }
+
+    private async Task AutoLoopSequence(DecorWindow item)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        canvas.Pulse();
+        await Task.Delay(160);
+        Rect area = MainWindow.VirtualDesktopBounds;
+        Point home = item.HomePosition;
+        Point[] loop = [new(home.X + 60, home.Y), new(home.X + 60, home.Y + 55), new(home.X - 25, home.Y + 55), new(home.X - 25, home.Y), home];
+        foreach (Point raw in loop)
+        {
+            Point clamped = new(
+                Math.Clamp(raw.X, area.Left + 8, area.Right - item.Width - 8),
+                Math.Clamp(raw.Y, area.Top + 8, area.Bottom - item.Height - 8));
+            canvas.SetDirection(clamped.X >= item.Left ? 1 : -1);
+            await item.AnimateToAsync(clamped, 260);
+        }
+        canvas.Pulse();
+    }
+
+    private async Task WiggleSequence(DecorWindow item)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 280);
+        Point home = item.HomePosition;
+        for (int rep = 0; rep < 4; rep++)
+        {
+            canvas.Pulse();
+            await item.AnimateToAsync(new Point(home.X + (rep % 2 == 0 ? 4 : -4), home.Y), 90);
+            await Task.Delay(90);
+        }
+        await item.AnimateToAsync(home, 140);
+    }
+
+    private async Task PeekabooSequence(DecorWindow item, double fadeTo, int holdMs, bool midPeek = false)
+    {
+        canvas.SetDirection(item.Left >= Left ? 1 : -1);
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 280);
+        Fade(fadeTo, 240);
+        if (midPeek)
+        {
+            await Task.Delay(holdMs / 2);
+            Fade(.65, 160);
+            await Task.Delay(240);
+            Fade(fadeTo, 160);
+            await Task.Delay(holdMs / 2);
+        }
+        else
+        {
+            await Task.Delay(holdMs);
+        }
+        Fade(1, 220);
+        await Task.Delay(200);
+    }
+
+    private async Task SettleSequence(DecorWindow item, bool sleep, int holdMs)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 280);
+        if (sleep) canvas.SetSleeping(true);
+        await Task.Delay(holdMs);
+        if (sleep) canvas.SetSleeping(sleeping);
+    }
+
+    private async Task ExerciseSequence(DecorWindow item)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
+        for (int rep = 0; rep < 5; rep++)
+        {
+            canvas.Pulse();
+            await Task.Delay(230);
+        }
+    }
+
+    private async Task AnimateSelfToAsync(Point target, int milliseconds)
+    {
+        Point start = new(Left, Top);
+        int steps = Math.Max(1, milliseconds / 16);
+        for (int step = 1; step <= steps; step++)
+        {
+            double t = 1 - Math.Pow(1 - (double)step / steps, 3);
+            Left = start.X + (target.X - start.X) * t;
+            Top = start.Y + (target.Y - start.Y) * t;
+            canvas.SetDirection(target.X >= start.X ? 1 : -1);
+            canvas.AdvanceFrame(16);
+            await Task.Delay(16);
+        }
+    }
+
+    private void Fade(double to, int milliseconds) =>
+        BeginAnimation(OpacityProperty, new System.Windows.Media.Animation.DoubleAnimation(to, TimeSpan.FromMilliseconds(milliseconds))
+        { EasingFunction = new System.Windows.Media.Animation.QuadraticEase { EasingMode = System.Windows.Media.Animation.EasingMode.EaseOut } });
+
     private void MoveScheduledFrame(DateTime now)
     {
         if (!IsLoaded) return;
@@ -258,16 +470,16 @@ public sealed class SummonedGhostWindow : Window
 
     private void MoveFrame(double elapsedMilliseconds)
     {
+        if (playSessionActive)
+        {
+            // A decor play sequence is directly tweening Left/Top itself; just keep the idle bob alive.
+            canvas.AdvanceFrame(elapsedMilliseconds);
+            return;
+        }
         if (sleeping) return;
         if (dragging)
         {
             SampleDragMotion();
-            return;
-        }
-        if (DateTime.UtcNow < pausedUntil)
-        {
-            // Settled in at a decor item: hold position, but keep the idle bob/squash alive.
-            canvas.AdvanceFrame(elapsedMilliseconds);
             return;
         }
         if (flingVelocity.Length > .05)
@@ -285,13 +497,7 @@ public sealed class SummonedGhostWindow : Window
         double distance = Math.Sqrt(dx * dx + dy * dy);
         if (distance < 4)
         {
-            if (targetDecorItem is { } item)
-            {
-                lastVisitedDecor = item;
-                lastVisitedDecorAt = DateTime.UtcNow;
-                targetDecorItem = null;
-                pausedUntil = DateTime.UtcNow.AddSeconds(1.2 + random.NextDouble() * .6);
-            }
+            if (targetDecorItem is { } item) PlayWithDecor(item);
             else ChooseDestination();
         }
         else
@@ -384,6 +590,7 @@ public sealed class SummonedGhostWindow : Window
 
     protected override void OnClosed(EventArgs e)
     {
+        closed = true;
         activeCompanions.Remove(this);
         if (activeCompanions.Count == 0) movementScheduler.Stop();
         base.OnClosed(e);
@@ -449,6 +656,14 @@ internal sealed class SummonedGhostCanvas : FrameworkElement
     internal void AdvanceFrame(double elapsedMilliseconds)
     {
         frame += elapsedMilliseconds / 16d;
+        InvalidateVisual();
+    }
+
+    /// <summary>Companions have no separate Bounce animation like the main ghost — this jumps the
+    /// idle bob/squash phase forward for a visible little pop, standing in for a "kick"/"pop" cue.</summary>
+    internal void Pulse()
+    {
+        frame += 6;
         InvalidateVisual();
     }
 

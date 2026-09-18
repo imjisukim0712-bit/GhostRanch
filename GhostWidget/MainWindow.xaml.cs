@@ -438,6 +438,12 @@ public partial class MainWindow : Window
                 default: await SettleSequence(item, sleep: false, 900); break;
             }
         }
+        catch (InvalidOperationException)
+        {
+            // The item was removed, or the app closed, mid-sequence; the next property touch on
+            // a closed window throws. Nothing left to do but stop cleanly.
+            return;
+        }
         finally
         {
             item.IsPlaying = false;
@@ -702,10 +708,15 @@ public partial class MainWindow : Window
     /// bringing the ghost to the toy. Called by DecorWindow when the player drops it.</summary>
     internal bool TryPlayWithNearbyDecor(DecorWindow item)
     {
-        if (resting || decorPlaySessionActive || item.IsPlaying) return false;
-        if (!GhostInteractionBounds().IntersectsWith(item.Bounds)) return false;
-        PlayWithDecor(item);
-        return true;
+        if (!resting && !decorPlaySessionActive && !item.IsPlaying && GhostInteractionBounds().IntersectsWith(item.Bounds))
+        {
+            PlayWithDecor(item);
+            return true;
+        }
+        // Not close to the main ghost — maybe it landed near a summoned companion instead.
+        foreach (SummonedGhostWindow friend in summonedGhosts)
+            if (friend.TryPlayWithNearbyDecor(item)) return true;
+        return false;
     }
 
     private void Ghost_MouseLeave(object sender, MouseEventArgs e)
