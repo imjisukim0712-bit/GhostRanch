@@ -120,6 +120,7 @@ public partial class MainWindow : Window
     private readonly List<SummonedGhostWindow> summonedGhosts = [];
     private double globalGhostSize = 1;
     private DesktopNotificationWindow? contentNotification;
+    private TrayIcon? trayIcon;
     private bool captureReady;
     private bool battleReady;
     private DateTime raiseReadyAt = DateTime.MinValue;
@@ -170,6 +171,7 @@ public partial class MainWindow : Window
         movementTimer.Start();
         blinkTimer.Start();
         UpdateInfo();
+        trayIcon = new TrayIcon(GhostLayer.ContextMenu, GhostLayer, "유령사냥");
 
         if (Environment.GetCommandLineArgs().Contains("--farm-preview"))
         {
@@ -1181,6 +1183,7 @@ public partial class MainWindow : Window
 
     private void Window_Closed(object? sender, EventArgs e)
     {
+        trayIcon?.Dispose();
         farmWindow?.Close();
         summonSelectionWindow?.Close();
         foreach (SummonedGhostWindow companion in summonedGhosts.ToArray()) companion.Close();
