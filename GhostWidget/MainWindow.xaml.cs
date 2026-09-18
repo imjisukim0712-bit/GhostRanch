@@ -124,6 +124,7 @@ public partial class MainWindow : Window
     private bool captureReady;
     private bool battleReady;
     private DateTime raiseReadyAt = DateTime.MinValue;
+    private DateTime lastHeartbeatRedraw = DateTime.MinValue;
     private readonly Dictionary<string, string[]> dialogueLines = new()
     {
         ["빨강이"] = ["Boo! 내가 먼저 갈게!", "장난 한 번만 치고 올게!"],
@@ -317,6 +318,7 @@ public partial class MainWindow : Window
 
     private void MoveFrame(object? sender, EventArgs e)
     {
+        HeartbeatRedraw();
         if (resting) return;
         if (dragging)
         {
@@ -344,6 +346,27 @@ public partial class MainWindow : Window
         double speed = energy < 15 ? 0.38 : 0.72;
         Left += dx / distance * speed;
         Top += dy / distance * speed;
+    }
+
+    // A borderless AllowsTransparency window can occasionally render fully blank after a
+    // display/GPU hiccup (sleep, monitor change, driver reset) even though the process and
+    // window are still alive. Roaming already forces a fresh frame every tick; while resting
+    // the widget sits fully static, so nothing else would catch or correct that. This runs at
+    // most once a second to self-heal without any visible cost.
+    private void HeartbeatRedraw()
+    {
+        if (DateTime.Now - lastHeartbeatRedraw < TimeSpan.FromSeconds(1)) return;
+        lastHeartbeatRedraw = DateTime.Now;
+        if (Visibility != Visibility.Visible) Visibility = Visibility.Visible;
+        if (Opacity < 1) Opacity = 1;
+        Rect area = VirtualDesktopBounds;
+        if (Left + Width < area.Left || Left > area.Right || Top + Height < area.Top || Top > area.Bottom)
+        {
+            Left = Math.Clamp(Left, area.Left, Math.Max(area.Left, area.Right - Width));
+            Top = Math.Clamp(Top, area.Top, Math.Max(area.Top, area.Bottom - Height));
+        }
+        InvalidateVisual();
+        MainGhostArtwork.InvalidateVisual();
     }
 
     private void ChooseDestination()
