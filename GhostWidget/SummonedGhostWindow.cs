@@ -188,7 +188,25 @@ public sealed class SummonedGhostWindow : Window
         if (!dragging) return;
         dragging = false;
         ReleaseMouseCapture();
+        if (FindNearbyDecor() is { } item)
+        {
+            flingVelocity = new Vector();
+            lastVisitedDecor = item;
+            lastVisitedDecorAt = DateTime.UtcNow;
+            targetDecorItem = null;
+            pausedUntil = DateTime.UtcNow.AddSeconds(1.2 + random.NextDouble() * .6);
+            return;
+        }
         BeginFling();
+    }
+
+    // Dropping a companion on or near a placed decoration settles it in immediately, instead of
+    // waiting on the ambient roam-AI chance in ChooseDestination.
+    private DecorWindow? FindNearbyDecor()
+    {
+        const double margin = 20;
+        Rect bounds = new(Left - margin, Top - margin, Width + margin * 2, Height + margin * 2);
+        return DecorWindow.PlacedItems.FirstOrDefault(item => bounds.IntersectsWith(item.Bounds));
     }
 
     private void ChooseDestination()

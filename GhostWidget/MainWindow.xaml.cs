@@ -464,8 +464,23 @@ public partial class MainWindow : Window
         if (!dragging) return;
         dragging = false;
         GhostLayer.ReleaseMouseCapture();
+        if (didDrag && FindNearbyDecor() is { } item)
+        {
+            flingVelocity = new Vector();
+            PlayWithDecor(item);
+            return;
+        }
         if (!didDrag) Pet();
         else BeginFling();
+    }
+
+    // Dropping the ghost on or near a placed decoration plays with it immediately, instead of
+    // waiting on the ambient roam-AI chance in ChooseDestination.
+    private DecorWindow? FindNearbyDecor()
+    {
+        const double margin = 24;
+        Rect ghostBounds = new(Left - margin, Top - margin, Width + margin * 2, Height + margin * 2);
+        return DecorWindow.PlacedItems.FirstOrDefault(item => ghostBounds.IntersectsWith(item.Bounds));
     }
 
     private void Ghost_MouseLeave(object sender, MouseEventArgs e)
