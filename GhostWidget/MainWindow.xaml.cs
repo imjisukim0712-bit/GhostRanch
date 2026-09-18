@@ -124,6 +124,7 @@ public partial class MainWindow : Window
     private DecorWindow? targetDecorItem;
     private DecorWindow? lastVisitedDecor;
     private DateTime lastVisitedDecorAt = DateTime.MinValue;
+    private bool decorPlaySessionActive;
     private double globalGhostSize = 1;
     private DesktopNotificationWindow? contentNotification;
     private TrayIcon? trayIcon;
@@ -326,6 +327,7 @@ public partial class MainWindow : Window
     private void MoveFrame(object? sender, EventArgs e)
     {
         HeartbeatRedraw();
+        if (decorPlaySessionActive) return;
         if (resting) return;
         if (dragging)
         {
@@ -366,6 +368,7 @@ public partial class MainWindow : Window
     // most once a second to self-heal without any visible cost.
     private void HeartbeatRedraw()
     {
+        if (decorPlaySessionActive) return;
         if (DateTime.Now - lastHeartbeatRedraw < TimeSpan.FromSeconds(1)) return;
         lastHeartbeatRedraw = DateTime.Now;
         if (Visibility != Visibility.Visible) Visibility = Visibility.Visible;
@@ -401,20 +404,93 @@ public partial class MainWindow : Window
             area.Top + 30 + random.NextDouble() * (maxY - area.Top - 30));
     }
 
-    // Purely cosmetic: reuses the existing Bounce/ShowSpeech reaction, no stat changes.
-    private void PlayWithDecor(DecorWindow item)
+    // Purely cosmetic: no stat changes. Runs a short category-specific choreography (the item
+    // itself moves for toys, the ghost hides for hideouts, the ghost rests for facilities) and
+    // finishes with the existing Bounce/ShowSpeech reaction.
+    private async void PlayWithDecor(DecorWindow item)
     {
+        if (decorPlaySessionActive || item.IsPlaying) return;
         lastVisitedDecor = item;
         lastVisitedDecorAt = DateTime.Now;
         targetDecorItem = null;
-        MainGhostArtwork.SetGaze(item.Left >= Left ? 14 : -14, 0);
+        decorPlaySessionActive = true;
+        item.IsPlaying = true;
+        DecorSpecies species = DecorCatalog.Items[item.DecorIndex];
+        try
+        {
+            switch (species.Category)
+            {
+                case DecorCategory.Toy: await DribbleSequence(item); break;
+                case DecorCategory.Hideout: await HideSequence(item); break;
+                default: await RestSequence(); break;
+            }
+        }
+        finally
+        {
+            item.IsPlaying = false;
+            decorPlaySessionActive = false;
+        }
         Bounce();
-        ShowSpeech(DecorCatalog.Items[item.DecorIndex].PlayLine);
+        ShowSpeech(species.PlayLine);
         ChooseDestination();
+    }
+
+    // The item hops to a few nearby spots while the ghost chases it, then it's trapped back home.
+    private async Task DribbleSequence(DecorWindow item)
+    {
+        Rect area = VirtualDesktopBounds;
+        for (int rep = 0; rep < 3; rep++)
+        {
+            double angle = random.NextDouble() * Math.PI * 2;
+            double distance = 45 + random.NextDouble() * 35;
+            Point hop = new(
+                Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
+                Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
+            Task ballHop = item.AnimateToAsync(hop, 380);
+            Task ghostChase = AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 380);
+            await Task.WhenAll(ballHop, ghostChase);
+            Bounce();
+            await Task.Delay(160);
+        }
+        await item.AnimateToAsync(item.HomePosition, 420);
+    }
+
+    // A shy little peekaboo: the ghost fades to a faint silhouette, then pops back.
+    private async Task HideSequence(DecorWindow item)
+    {
+        MainGhostArtwork.SetGaze(item.Left >= Left ? 14 : -14, 0);
+        Fade(this, .15, 260);
+        await Task.Delay(900 + random.Next(400));
+        Fade(this, 1, 220);
+        await Task.Delay(240);
+    }
+
+    // Borrows the sleeping pose for a relaxed beat without touching the separate "잠깐 쉬기" sleep mode.
+    private async Task RestSequence()
+    {
+        MainGhostArtwork.SetGaze(0, 0);
+        MainGhostArtwork.IsSleeping = true;
+        await Task.Delay(1100 + random.Next(500));
+        MainGhostArtwork.IsSleeping = resting;
+    }
+
+    private async Task AnimateSelfToAsync(Point target, int milliseconds)
+    {
+        Point start = new(Left, Top);
+        int steps = Math.Max(1, milliseconds / 16);
+        for (int step = 1; step <= steps; step++)
+        {
+            double t = 1 - Math.Pow(1 - (double)step / steps, 3);
+            Left = start.X + (target.X - start.X) * t;
+            Top = start.Y + (target.Y - start.Y) * t;
+            MainGhostArtwork.SetGaze(target.X >= start.X ? 14 : -14, 0);
+            await Task.Delay(16);
+        }
     }
 
     private void Ghost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
+        if (decorPlaySessionActive) return;
         if (resting)
         {
             WakeMainFromSleep();

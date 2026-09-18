@@ -20,13 +20,21 @@ internal sealed class DecorWindow : Window
     private NativePoint dragCursorStart;
     private Point windowStart;
     private bool dragging;
+    private bool closed;
 
     internal int DecorIndex { get; }
+    /// <summary>Where this item returns to after a play sequence moves it around. Updated whenever
+    /// the player manually drags it, so future sequences dance around the new spot, not the old one.</summary>
+    internal Point HomePosition { get; private set; }
+    /// <summary>True while a MainWindow play sequence (DribbleSequence etc.) is animating this
+    /// item's position. Dragging is disabled meanwhile so the two don't fight over Left/Top.</summary>
+    internal bool IsPlaying { get; set; }
 
     internal DecorWindow(int decorIndex, Point spawnPoint, Action onChanged)
     {
         DecorIndex = decorIndex;
         this.onChanged = onChanged;
+        HomePosition = spawnPoint;
         DecorSpecies species = DecorCatalog.Items[decorIndex];
         Width = Size; Height = Size;
         WindowStyle = WindowStyle.None; AllowsTransparency = true; Background = Brushes.Transparent;
@@ -42,6 +50,22 @@ internal sealed class DecorWindow : Window
     }
 
     internal Rect Bounds => new(Left, Top, Width, Height);
+
+    /// <summary>Tweens Left/Top toward target over the given duration. Used by MainWindow's play
+    /// sequences to make an item roll/hop around instead of sitting completely still.</summary>
+    internal async Task AnimateToAsync(Point target, int milliseconds)
+    {
+        Point start = new(Left, Top);
+        int steps = Math.Max(1, milliseconds / 16);
+        for (int step = 1; step <= steps; step++)
+        {
+            if (closed) return;
+            double t = 1 - Math.Pow(1 - (double)step / steps, 3); // ease-out cubic
+            Left = start.X + (target.X - start.X) * t;
+            Top = start.Y + (target.Y - start.Y) * t;
+            await Task.Delay(16);
+        }
+    }
 
     /// <summary>Where a ghost should stand to "use" this item — just beside it, not on top of the art.</summary>
     internal Point GetApproachPoint(double approacherWidth, double approacherHeight) =>
@@ -70,7 +94,7 @@ internal sealed class DecorWindow : Window
 
     private void Decor_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
     {
-        if (!GetCursorPos(out dragCursorStart)) return;
+        if (IsPlaying || !GetCursorPos(out dragCursorStart)) return;
         windowStart = new Point(Left, Top);
         dragging = true;
         CaptureMouse();
@@ -89,11 +113,13 @@ internal sealed class DecorWindow : Window
         if (!dragging) return;
         dragging = false;
         ReleaseMouseCapture();
+        HomePosition = new Point(Left, Top);
         onChanged();
     }
 
     protected override void OnClosed(EventArgs e)
     {
+        closed = true;
         PlacedItems.Remove(this);
         onChanged();
         base.OnClosed(e);
