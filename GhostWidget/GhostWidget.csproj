@@ -13,7 +13,7 @@
     <IncludeNativeLibrariesForSelfExtract>true</IncludeNativeLibrariesForSelfExtract>
     <IncludeAllContentForSelfExtract>true</IncludeAllContentForSelfExtract>
     <DebugType>none</DebugType>
-    <Version>1.0.4</Version>
+    <Version>1.0.5</Version>
   </PropertyGroup>
   <ItemGroup>
     <Content Include="PreviewAssets\candidate-pairs.png" CopyToOutputDirectory="PreserveNewest" />

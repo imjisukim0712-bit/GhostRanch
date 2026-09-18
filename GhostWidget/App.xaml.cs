@@ -5,8 +5,14 @@ namespace GhostWidget;
 
 public partial class App : Application
 {
+    private const string SingleInstanceMutexName = "GhostFarmWidget.SingleInstance";
+    private const string ShutdownSignalName = "GhostFarmWidget.ShutdownSignal";
+
     private Mutex? singleInstanceMutex;
     private bool ownsSingleInstanceMutex;
+    private EventWaitHandle? shutdownSignal;
+    private RegisteredWaitHandle? shutdownWait;
+    private MainWindow? mainWindow;
 
     protected override void OnStartup(StartupEventArgs e)
     {
@@ -15,21 +21,43 @@ public partial class App : Application
         bool previewMode = Environment.GetCommandLineArgs().Any(argument => argument.EndsWith("-preview", StringComparison.Ordinal));
         if (!previewMode)
         {
-            singleInstanceMutex = new Mutex(true, "GhostFarmWidget.SingleInstance", out ownsSingleInstanceMutex);
+            singleInstanceMutex = new Mutex(true, SingleInstanceMutexName, out ownsSingleInstanceMutex);
             if (!ownsSingleInstanceMutex)
             {
-                // A second double-click must never create a second desktop pet or duplicate timers.
-                singleInstanceMutex.Dispose();
-                Shutdown();
-                return;
+                // Another instance is already running. The newest launch wins: ask it to close
+                // (which saves and shuts down through its own Window_Closed, same as a normal
+                // exit), then take over its slot instead of quietly giving up.
+                try
+                {
+                    using EventWaitHandle signal = EventWaitHandle.OpenExisting(ShutdownSignalName);
+                    signal.Set();
+                }
+                catch (WaitHandleCannotBeOpenedException) { /* running instance predates this signal; nothing to wake */ }
+
+                bool acquired;
+                try { acquired = singleInstanceMutex.WaitOne(TimeSpan.FromSeconds(5)); }
+                catch (AbandonedMutexException) { acquired = true; }
+                if (!acquired)
+                {
+                    singleInstanceMutex.Dispose();
+                    Shutdown();
+                    return;
+                }
+                ownsSingleInstanceMutex = true;
             }
+            shutdownSignal = new EventWaitHandle(false, EventResetMode.AutoReset, ShutdownSignalName);
+            shutdownWait = ThreadPool.RegisterWaitForSingleObject(shutdownSignal,
+                (_, _) => Dispatcher.Invoke(() => mainWindow?.Close()), null, Timeout.Infinite, executeOnlyOnce: true);
         }
         base.OnStartup(e);
-        new MainWindow().Show();
+        mainWindow = new MainWindow();
+        mainWindow.Show();
     }
 
     protected override void OnExit(ExitEventArgs e)
     {
+        shutdownWait?.Unregister(null);
+        shutdownSignal?.Dispose();
         if (ownsSingleInstanceMutex) singleInstanceMutex?.ReleaseMutex();
         singleInstanceMutex?.Dispose();
         base.OnExit(e);
