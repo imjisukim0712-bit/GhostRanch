@@ -404,9 +404,9 @@ public partial class MainWindow : Window
             area.Top + 30 + random.NextDouble() * (maxY - area.Top - 30));
     }
 
-    // Purely cosmetic: no stat changes. Runs a short category-specific choreography (the item
-    // itself moves for toys, the ghost hides for hideouts, the ghost rests for facilities) and
-    // finishes with the existing Bounce/ShowSpeech reaction.
+    // Purely cosmetic: no stat changes. Runs a short choreography specific to this exact item
+    // (not just its category — a soccer ball and a bubble machine shouldn't move the same way)
+    // and finishes with the existing Bounce/ShowSpeech reaction.
     private async void PlayWithDecor(DecorWindow item)
     {
         if (decorPlaySessionActive || item.IsPlaying) return;
@@ -418,11 +418,24 @@ public partial class MainWindow : Window
         DecorSpecies species = DecorCatalog.Items[item.DecorIndex];
         try
         {
-            switch (species.Category)
+            switch (species.Art)
             {
-                case DecorCategory.Toy: await DribbleSequence(item); break;
-                case DecorCategory.Hideout: await HideSequence(item); break;
-                default: await RestSequence(); break;
+                case "SoccerBall": await DribbleSequence(item); break;
+                case "YarnBall": await RollSequence(item); break;
+                case "Frisbee": await ThrowFetchSequence(item); break;
+                case "ToyCar": await AutoLoopSequence(item); break;
+                case "BubbleMachine": await WiggleSequence(item); break;
+                case "Curtain": await PeekabooSequence(item, .10, 900); break;
+                case "TreeStump": await PeekabooSequence(item, .20, 700); break;
+                case "Grave": await PeekabooSequence(item, .55, 1100); break;
+                case "AtticTrunk": await PeekabooSequence(item, .10, 900, midPeek: true); break;
+                case "Cave": await PeekabooSequence(item, .05, 1300); break;
+                case "Hammock": await SettleSequence(item, sleep: true, 1300); break;
+                case "Campfire": await SettleSequence(item, sleep: false, 1200, bounceFlourish: true); break;
+                case "Gym": await ExerciseSequence(item); break;
+                case "CafeTable": await SettleSequence(item, sleep: false, 1300, bounceFlourish: true); break;
+                case "HotSpring": await SettleSequence(item, sleep: true, 1500); break;
+                default: await SettleSequence(item, sleep: false, 900); break;
             }
         }
         finally
@@ -462,23 +475,140 @@ public partial class MainWindow : Window
         await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
     }
 
-    // A shy little peekaboo: the ghost fades to a faint silhouette, then pops back.
-    private async Task HideSequence(DecorWindow item)
+    // Longer, fewer, more fluid rolls than the soccer ball's snappy kicks — reads as unspooling
+    // and chasing a rolling ball of yarn rather than being kicked around.
+    private async Task RollSequence(DecorWindow item)
     {
-        MainGhostArtwork.SetGaze(item.Left >= Left ? 14 : -14, 0);
-        Fade(this, .15, 260);
-        await Task.Delay(900 + random.Next(400));
-        Fade(this, 1, 220);
-        await Task.Delay(240);
+        Rect area = VirtualDesktopBounds;
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        for (int rep = 0; rep < 3; rep++)
+        {
+            Bounce();
+            double angle = random.NextDouble() * Math.PI * 2;
+            double distance = 90 + random.NextDouble() * 60;
+            Point roll = new(
+                Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
+                Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
+            MainGhostArtwork.SetGaze(roll.X >= item.Left ? 14 : -14, 0);
+            Task rollTask = item.AnimateToAsync(roll, 560);
+            await Task.Delay(140);
+            await AnimateSelfToAsync(item.ApproachPointFrom(roll, Width, Height), 480);
+            await rollTask;
+        }
+        await item.AnimateToAsync(item.HomePosition, 480);
     }
 
-    // Borrows the sleeping pose for a relaxed beat without touching the separate "잠깐 쉬기" sleep mode.
-    private async Task RestSequence()
+    // One big throw far away, a pause while it "lands", then the ghost fetches it and carries it home.
+    private async Task ThrowFetchSequence(DecorWindow item)
     {
-        MainGhostArtwork.SetGaze(0, 0);
-        MainGhostArtwork.IsSleeping = true;
-        await Task.Delay(1100 + random.Next(500));
-        MainGhostArtwork.IsSleeping = resting;
+        Rect area = VirtualDesktopBounds;
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        Bounce();
+        await Task.Delay(100);
+        double angle = random.NextDouble() * Math.PI * 2;
+        double distance = 170 + random.NextDouble() * 90;
+        Point landing = new(
+            Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
+            Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
+        MainGhostArtwork.SetGaze(landing.X >= item.Left ? 14 : -14, 0);
+        await item.AnimateToAsync(landing, 480);
+        await Task.Delay(260);
+        await AnimateSelfToAsync(item.ApproachPointFrom(landing, Width, Height), 520);
+        Bounce();
+        await Task.Delay(120);
+        await item.AnimateToAsync(item.HomePosition, 460);
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
+    }
+
+    // The car drives itself through a little loop while the ghost just watches, gaze tracking it.
+    private async Task AutoLoopSequence(DecorWindow item)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        Bounce(); // wind it up
+        await Task.Delay(160);
+        Rect area = VirtualDesktopBounds;
+        Point home = item.HomePosition;
+        Point[] loop = [new(home.X + 60, home.Y), new(home.X + 60, home.Y + 55), new(home.X - 25, home.Y + 55), new(home.X - 25, home.Y), home];
+        foreach (Point raw in loop)
+        {
+            Point clamped = new(
+                Math.Clamp(raw.X, area.Left + 8, area.Right - item.Width - 8),
+                Math.Clamp(raw.Y, area.Top + 8, area.Bottom - item.Height - 8));
+            MainGhostArtwork.SetGaze(clamped.X >= item.Left ? 14 : -14, 0);
+            await item.AnimateToAsync(clamped, 260);
+        }
+        Bounce(); // impressed
+    }
+
+    // A stationary machine, so it wiggles in place (working) instead of moving away, while the
+    // ghost hops repeatedly beside it as if popping bubbles.
+    private async Task WiggleSequence(DecorWindow item)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 280);
+        Point home = item.HomePosition;
+        for (int rep = 0; rep < 4; rep++)
+        {
+            Bounce();
+            await item.AnimateToAsync(new Point(home.X + (rep % 2 == 0 ? 4 : -4), home.Y), 90);
+            await Task.Delay(90);
+        }
+        await item.AnimateToAsync(home, 140);
+    }
+
+    // A shy little peekaboo: the ghost fades toward the item, holds, then pops back. A deeper/
+    // longer fade reads as a better hiding spot. midPeek adds a brief half-reveal partway through,
+    // like popping up to check whether the coast is clear before ducking back down.
+    private async Task PeekabooSequence(DecorWindow item, double fadeTo, int holdMs, bool midPeek = false)
+    {
+        MainGhostArtwork.SetGaze(item.Left >= Left ? 14 : -14, 0);
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 280);
+        Fade(this, fadeTo, 240);
+        if (midPeek)
+        {
+            await Task.Delay(holdMs / 2);
+            Fade(this, .65, 160);
+            await Task.Delay(240);
+            Fade(this, fadeTo, 160);
+            await Task.Delay(holdMs / 2);
+        }
+        else
+        {
+            await Task.Delay(holdMs);
+        }
+        Fade(this, 1, 220);
+        await Task.Delay(200);
+    }
+
+    // Settles the ghost at the item for a quiet beat. sleep borrows the closed-eyes pose (restored
+    // to whatever "잠깐 쉬기" already has it set to, never forced awake mid-nap, never forced asleep
+    // if the player is mid-battle-adjacent activity elsewhere). bounceFlourish adds one small
+    // settling movement partway through instead of sitting perfectly still throughout.
+    private async Task SettleSequence(DecorWindow item, bool sleep, int holdMs, bool bounceFlourish = false)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 280);
+        if (sleep) MainGhostArtwork.IsSleeping = true;
+        if (bounceFlourish)
+        {
+            await Task.Delay(holdMs / 3);
+            Bounce();
+            await Task.Delay(holdMs - holdMs / 3);
+        }
+        else
+        {
+            await Task.Delay(holdMs);
+        }
+        if (sleep) MainGhostArtwork.IsSleeping = resting;
+    }
+
+    // Brisk repeated reps instead of a rest pose — the one "rest facility" that's actually active.
+    private async Task ExerciseSequence(DecorWindow item)
+    {
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
+        for (int rep = 0; rep < 5; rep++)
+        {
+            Bounce();
+            await Task.Delay(230);
+        }
     }
 
     private async Task AnimateSelfToAsync(Point target, int milliseconds)

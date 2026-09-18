@@ -71,7 +71,13 @@ internal sealed class DecorWindow : Window
 
     /// <summary>Where a ghost should stand to "use" this item — just beside it, not on top of the art.</summary>
     internal Point GetApproachPoint(double approacherWidth, double approacherHeight) =>
-        new(Left - approacherWidth * .3, Top + Height * .55 - approacherHeight * .5);
+        ApproachPointFrom(new Point(Left, Top), approacherWidth, approacherHeight);
+
+    /// <summary>Same offset as GetApproachPoint, but for a hypothetical position rather than the
+    /// item's current Left/Top — lets a ghost chase where the item is headed (e.g. mid-throw)
+    /// instead of only where it already is.</summary>
+    internal Point ApproachPointFrom(Point position, double approacherWidth, double approacherHeight) =>
+        new(position.X - approacherWidth * .3, position.Y + Height * .55 - approacherHeight * .5);
 
     private ContextMenu BuildContextMenu()
     {
