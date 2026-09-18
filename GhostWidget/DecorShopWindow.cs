@@ -160,13 +160,17 @@ internal sealed class DecorShopWindow : Window
         Button action = new()
         {
             Width = 82, Height = 40, BorderThickness = new Thickness(0), FontWeight = FontWeights.Bold, FontSize = 11,
-            Foreground = Brushes.White, Cursor = Cursors.Hand
+            Cursor = Cursors.Hand, Template = FlatButtonTemplate()
         };
         if (!owned)
         {
             bool affordable = companion.Luna >= species.Price;
             action.Content = $"구매\n{species.Price}✦";
-            action.Background = Brush(affordable ? "#6557DB" : "#C9C4CF");
+            // A default WPF Button's disabled-state trigger overrides custom Background/Foreground
+            // with system colors, which is what was making this unreadable — FlatButtonTemplate
+            // above has no such trigger, so these explicit colors are what actually render.
+            action.Background = Brush(affordable ? "#6557DB" : "#E4E0E8");
+            action.Foreground = Brush(affordable ? "#FFFFFF" : "#6B6470");
             action.IsEnabled = affordable;
             action.Click += (_, _) => { resultText.Text = companion.PurchaseDecor(index); RefreshList(); };
         }
@@ -174,12 +178,14 @@ internal sealed class DecorShopWindow : Window
         {
             action.Content = "배치하기";
             action.Background = Brush("#4FA35A");
+            action.Foreground = Brushes.White;
             action.Click += (_, _) => { companion.PlaceDecor(index); resultText.Text = $"{species.Name}을(를) 데스크톱에 놓았어요."; RefreshList(); };
         }
         else
         {
             action.Content = "치우기";
             action.Background = Brush("#D65C5C");
+            action.Foreground = Brushes.White;
             action.Click += (_, _) => { companion.RemoveDecorPlacement(index); resultText.Text = $"{species.Name}을(를) 치웠어요. 다시 배치할 수 있어요."; RefreshList(); };
         }
 
@@ -201,6 +207,21 @@ internal sealed class DecorShopWindow : Window
             Margin = new Thickness(0, 0, 0, 8),
             Child = content
         };
+    }
+
+    // A plain Button's default template restyles Background/Foreground when IsEnabled=false
+    // (that's what made the "can't afford" price unreadable). This template has no such trigger,
+    // so the colors CreateItemRow sets are exactly what renders in every state.
+    private static ControlTemplate FlatButtonTemplate()
+    {
+        FrameworkElementFactory border = new(typeof(Border));
+        border.SetBinding(Border.BackgroundProperty, new System.Windows.Data.Binding("Background") { RelativeSource = new System.Windows.Data.RelativeSource(System.Windows.Data.RelativeSourceMode.TemplatedParent) });
+        border.SetValue(Border.CornerRadiusProperty, new CornerRadius(12));
+        FrameworkElementFactory presenter = new(typeof(ContentPresenter));
+        presenter.SetValue(ContentPresenter.HorizontalAlignmentProperty, HorizontalAlignment.Center);
+        presenter.SetValue(ContentPresenter.VerticalAlignmentProperty, VerticalAlignment.Center);
+        border.AppendChild(presenter);
+        return new ControlTemplate(typeof(Button)) { VisualTree = border };
     }
 
     private static SolidColorBrush Brush(string code) => new((Color)ColorConverter.ConvertFromString(code)!);
