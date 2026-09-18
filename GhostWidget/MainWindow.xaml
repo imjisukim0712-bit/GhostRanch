@@ -69,6 +69,7 @@
                 <ContextMenu Background="#F21A1723" BorderBrush="#33303B" BorderThickness="1"
                              HasDropShadow="True" Padding="5">
                     <MenuItem Header="▣  유령 농장 열기" Click="OpenFarm_Click"/>
+                    <MenuItem Header="🏠  유령 상점 열기" Click="OpenDecorShop_Click"/>
                     <MenuItem Header="👥  잡은 유령 모두 소환" Click="SummonCaughtGhosts_Click"/>
                     <MenuItem Header="↩  소환 유령 해산" Click="DismissSummonedGhosts_Click"/>
                     <Separator Background="#35313F" Margin="8,4"/>

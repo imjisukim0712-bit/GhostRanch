@@ -37,6 +37,10 @@ public sealed class SummonedGhostWindow : Window
     private double ghostScale;
     private DateTime lastFrameAt;
     private readonly Point? spawnPoint;
+    private DecorWindow? targetDecorItem;
+    private DecorWindow? lastVisitedDecor;
+    private DateTime lastVisitedDecorAt = DateTime.MinValue;
+    private DateTime pausedUntil = DateTime.MinValue;
 
     internal int SpeciesIndex { get; }
 
@@ -189,6 +193,18 @@ public sealed class SummonedGhostWindow : Window
 
     private void ChooseDestination()
     {
+        targetDecorItem = null;
+        DecorWindow[] decorCandidates = DecorWindow.PlacedItems
+            .Where(item => !TouchesHost(new Point(item.Left, item.Top))
+                && (item != lastVisitedDecor || DateTime.UtcNow - lastVisitedDecorAt > TimeSpan.FromSeconds(45)))
+            .ToArray();
+        if (decorCandidates.Length > 0 && random.NextDouble() < 0.15)
+        {
+            double DistanceSquaredTo(DecorWindow item) => (item.Left - Left) * (item.Left - Left) + (item.Top - Top) * (item.Top - Top);
+            targetDecorItem = decorCandidates.OrderBy(DistanceSquaredTo).First();
+            destination = targetDecorItem.GetApproachPoint(Width, Height);
+            return;
+        }
         Rect area = MainWindow.VirtualDesktopBounds;
         double minX = area.Left + 8;
         double minY = area.Top + 8;
@@ -230,6 +246,12 @@ public sealed class SummonedGhostWindow : Window
             SampleDragMotion();
             return;
         }
+        if (DateTime.UtcNow < pausedUntil)
+        {
+            // Settled in at a decor item: hold position, but keep the idle bob/squash alive.
+            canvas.AdvanceFrame(elapsedMilliseconds);
+            return;
+        }
         if (flingVelocity.Length > .05)
         {
             MoveFling(elapsedMilliseconds);
@@ -243,7 +265,17 @@ public sealed class SummonedGhostWindow : Window
         double dy = destination.Y - Top;
         canvas.SetDirection(dx >= 0 ? 1 : -1);
         double distance = Math.Sqrt(dx * dx + dy * dy);
-        if (distance < 4) ChooseDestination();
+        if (distance < 4)
+        {
+            if (targetDecorItem is { } item)
+            {
+                lastVisitedDecor = item;
+                lastVisitedDecorAt = DateTime.UtcNow;
+                targetDecorItem = null;
+                pausedUntil = DateTime.UtcNow.AddSeconds(1.2 + random.NextDouble() * .6);
+            }
+            else ChooseDestination();
+        }
         else
         {
             double distanceScale = elapsedMilliseconds / 16d;

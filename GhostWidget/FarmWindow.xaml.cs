@@ -45,6 +45,7 @@ public partial class FarmWindow : Window
     private void Battle_Click(object sender, RoutedEventArgs e) => companion.OpenBattle(this);
     private void Gacha_Click(object sender, RoutedEventArgs e) => Act(companion.DrawGhostGacha());
     private void Rest_Click(object sender, RoutedEventArgs e) => Act(companion.FarmRest());
+    private void Shop_Click(object sender, RoutedEventArgs e) => companion.OpenDecorShop();
     private void GhostChoice_Click(object sender, RoutedEventArgs e)
     {
         if (sender is Button { Tag: not null } button && int.TryParse(button.Tag.ToString(), out int index)) Select(index);

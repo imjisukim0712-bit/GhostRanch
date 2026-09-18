@@ -117,7 +117,13 @@ public partial class MainWindow : Window
     private int experience;
     private FarmWindow? farmWindow;
     private SummonSelectionWindow? summonSelectionWindow;
+    private DecorShopWindow? decorShopWindow;
     private readonly List<SummonedGhostWindow> summonedGhosts = [];
+    private readonly HashSet<int> ownedDecor = [];
+    private DecorPlacementSave[] pendingDecorPlacements = [];
+    private DecorWindow? targetDecorItem;
+    private DecorWindow? lastVisitedDecor;
+    private DateTime lastVisitedDecorAt = DateTime.MinValue;
     private double globalGhostSize = 1;
     private DesktopNotificationWindow? contentNotification;
     private TrayIcon? trayIcon;
@@ -245,6 +251,7 @@ public partial class MainWindow : Window
             Close();
             return;
         }
+        RestorePlacedDecor();
         ScheduleContentEvent(first: true);
         ScheduleCaptureEvent();
         ScheduleBattleEvent();
@@ -337,9 +344,13 @@ public partial class MainWindow : Window
         double distance = Math.Sqrt(dx * dx + dy * dy);
         if (distance < 5)
         {
-            ChooseDestination();
-            if (random.NextDouble() < 0.32)
-                Speak();
+            if (targetDecorItem is { } item) PlayWithDecor(item);
+            else
+            {
+                ChooseDestination();
+                if (random.NextDouble() < 0.32)
+                    Speak();
+            }
             return;
         }
 
@@ -371,12 +382,35 @@ public partial class MainWindow : Window
 
     private void ChooseDestination()
     {
+        targetDecorItem = null;
+        DecorWindow[] candidates = DecorWindow.PlacedItems
+            .Where(item => item != lastVisitedDecor || DateTime.Now - lastVisitedDecorAt > TimeSpan.FromSeconds(45))
+            .ToArray();
+        if (candidates.Length > 0 && random.NextDouble() < 0.18)
+        {
+            double DistanceSquaredTo(DecorWindow item) => (item.Left - Left) * (item.Left - Left) + (item.Top - Top) * (item.Top - Top);
+            targetDecorItem = candidates.OrderBy(DistanceSquaredTo).First();
+            target = targetDecorItem.GetApproachPoint(Width, Height);
+            return;
+        }
         Rect area = VirtualDesktopBounds;
         double maxX = Math.Max(area.Left + 30, area.Right - Width - 30);
         double maxY = Math.Max(area.Top + 30, area.Bottom - Height - 20);
         target = new Point(
             area.Left + 30 + random.NextDouble() * (maxX - area.Left - 30),
             area.Top + 30 + random.NextDouble() * (maxY - area.Top - 30));
+    }
+
+    // Purely cosmetic: reuses the existing Bounce/ShowSpeech reaction, no stat changes.
+    private void PlayWithDecor(DecorWindow item)
+    {
+        lastVisitedDecor = item;
+        lastVisitedDecorAt = DateTime.Now;
+        targetDecorItem = null;
+        MainGhostArtwork.SetGaze(item.Left >= Left ? 14 : -14, 0);
+        Bounce();
+        ShowSpeech(DecorCatalog.Items[item.DecorIndex].PlayLine);
+        ChooseDestination();
     }
 
     private void Ghost_MouseLeftButtonDown(object sender, MouseButtonEventArgs e)
@@ -1039,6 +1073,79 @@ public partial class MainWindow : Window
         return $"{prize.Name}이(가) 또 나왔어요. 중복 보상 루나 +30";
     }
 
+    internal int Luna => luna;
+    internal bool OwnsDecor(int decorIndex) => ownedDecor.Contains(decorIndex);
+    internal bool IsDecorPlaced(int decorIndex) => DecorWindow.PlacedItems.Any(item => item.DecorIndex == decorIndex);
+
+    internal string PurchaseDecor(int decorIndex)
+    {
+        DecorSpecies species = DecorCatalog.Items[decorIndex];
+        if (ownedDecor.Contains(decorIndex)) return "이미 가지고 있어요.";
+        if (luna < species.Price) return $"루나가 부족해요. {species.Name}에는 {species.Price}루나가 필요해요.";
+        luna -= species.Price;
+        ownedDecor.Add(decorIndex);
+        PlaceDecor(decorIndex);
+        return $"{species.Name}을(를) 구매해서 데스크톱에 놓았어요!";
+    }
+
+    internal bool PlaceDecor(int decorIndex)
+    {
+        if (!ownedDecor.Contains(decorIndex) || IsDecorPlaced(decorIndex)) return false;
+        new DecorWindow(decorIndex, ChooseDecorSpawnPoint(), SaveState).Show();
+        SaveState();
+        return true;
+    }
+
+    internal bool RemoveDecorPlacement(int decorIndex)
+    {
+        DecorWindow? window = DecorWindow.PlacedItems.FirstOrDefault(item => item.DecorIndex == decorIndex);
+        if (window is null) return false;
+        window.Close();
+        return true;
+    }
+
+    private Point ChooseDecorSpawnPoint()
+    {
+        Rect area = VirtualDesktopBounds;
+        double minX = area.Left + 8;
+        double minY = area.Top + 8;
+        double maxX = Math.Max(minX + 1, area.Right - DecorWindow.Size - 8);
+        double maxY = Math.Max(minY + 1, area.Bottom - DecorWindow.Size - 8);
+        Point fallback = new(minX + random.NextDouble() * (maxX - minX), minY + random.NextDouble() * (maxY - minY));
+        for (int attempt = 0; attempt < 18; attempt++)
+        {
+            Point candidate = new(minX + random.NextDouble() * (maxX - minX), minY + random.NextDouble() * (maxY - minY));
+            Rect candidateBounds = new(candidate.X, candidate.Y, DecorWindow.Size, DecorWindow.Size);
+            if (!candidateBounds.IntersectsWith(GetCompanionExclusionBounds())
+                && DecorWindow.PlacedItems.All(item => !candidateBounds.IntersectsWith(item.Bounds)))
+                return candidate;
+        }
+        return fallback;
+    }
+
+    private void RestorePlacedDecor()
+    {
+        foreach (DecorPlacementSave placement in pendingDecorPlacements)
+        {
+            if (IsDecorPlaced(placement.DecorIndex)) continue;
+            new DecorWindow(placement.DecorIndex, new Point(placement.X, placement.Y), SaveState).Show();
+        }
+        pendingDecorPlacements = [];
+    }
+
+    internal void OpenDecorShop()
+    {
+        if (decorShopWindow is { IsVisible: true }) { decorShopWindow.Activate(); return; }
+        decorShopWindow = new DecorShopWindow(this);
+        decorShopWindow.Closed += (_, _) => decorShopWindow = null;
+        Rect area = SystemParameters.WorkArea;
+        decorShopWindow.Left = Math.Clamp(Left - decorShopWindow.Width - 12, area.Left + 12, area.Right - decorShopWindow.Width - 12);
+        decorShopWindow.Top = Math.Clamp(Top - 150, area.Top + 12, area.Bottom - decorShopWindow.Height - 12);
+        decorShopWindow.Show();
+    }
+
+    private void OpenDecorShop_Click(object sender, RoutedEventArgs e) => OpenDecorShop();
+
     internal BattleMove[] GetMoves(GhostSpecies ghost) => ghost.Form switch
     {
         "Pumpkin" => [new("호박 굴리기", 10, Element.Fire, EffectKind.None, 0, 6), new("으스스 빛", 14, Element.Fire, EffectKind.None, 0, 4), new("할로윈 폭죽", 18, Element.Fire, EffectKind.Burn, 5, 2)],
@@ -1162,7 +1269,9 @@ public partial class MainWindow : Window
         {
             string? directory = Path.GetDirectoryName(SavePath);
             if (directory is not null) Directory.CreateDirectory(directory);
-            GameSave save = new(level, experience, affection, energy, luna, orbs, wins, ghostIndex, unlockedGhosts.OrderBy(i => i).ToArray(), winStreak, duelsSinceBoss, raiseReadyAt.Ticks);
+            GameSave save = new(level, experience, affection, energy, luna, orbs, wins, ghostIndex, unlockedGhosts.OrderBy(i => i).ToArray(), winStreak, duelsSinceBoss, raiseReadyAt.Ticks,
+                ownedDecor.OrderBy(i => i).ToArray(),
+                DecorWindow.PlacedItems.Select(w => new DecorPlacementSave(w.DecorIndex, w.Left, w.Top)).ToArray());
             File.WriteAllText(SavePath, JsonSerializer.Serialize(save));
         }
         catch { /* The widget remains playable when storage is unavailable. */ }
@@ -1189,6 +1298,10 @@ public partial class MainWindow : Window
             foreach (int index in save.UnlockedGhosts.Where(i => i >= 0 && i < ghosts.Length)) unlockedGhosts.Add(index);
             ghostIndex = unlockedGhosts.Contains(save.GhostIndex) ? save.GhostIndex : 0;
             raiseReadyAt = new DateTime(save.RaiseReadyAtTicks);
+            ownedDecor.Clear();
+            foreach (int index in (save.OwnedDecor ?? []).Where(i => i >= 0 && i < DecorCatalog.Items.Length)) ownedDecor.Add(index);
+            pendingDecorPlacements = (save.PlacedDecor ?? [])
+                .Where(p => p.DecorIndex >= 0 && p.DecorIndex < DecorCatalog.Items.Length).ToArray();
             ApplyGhostStyle();
         }
         catch { /* Ignore malformed saves and start from safe defaults. */ }
@@ -1209,6 +1322,7 @@ public partial class MainWindow : Window
         trayIcon?.Dispose();
         farmWindow?.Close();
         summonSelectionWindow?.Close();
+        decorShopWindow?.Close();
         foreach (SummonedGhostWindow companion in summonedGhosts.ToArray()) companion.Close();
         movementTimer.Stop();
         blinkTimer.Stop();
@@ -1218,6 +1332,9 @@ public partial class MainWindow : Window
         battleTimer.Stop();
         raiseTimer.Stop();
         SaveState();
+        // DecorWindow.PlacedItems must still reflect what's on screen when SaveState() runs above,
+        // so close them only after saving, not folded into the cleanup block with the other windows.
+        foreach (DecorWindow item in DecorWindow.PlacedItems.ToArray()) item.Close();
         Application.Current.Shutdown();
     }
 
@@ -1250,4 +1367,5 @@ internal readonly record struct GhostSpecies(
 
 internal sealed record GameSave(
     int Level, int Experience, int Affection, int Energy, int Luna, int Orbs, int Wins,
-    int GhostIndex, int[] UnlockedGhosts, int WinStreak = 0, int DuelsSinceBoss = 0, long RaiseReadyAtTicks = 0);
+    int GhostIndex, int[] UnlockedGhosts, int WinStreak = 0, int DuelsSinceBoss = 0, long RaiseReadyAtTicks = 0,
+    int[]? OwnedDecor = null, DecorPlacementSave[]? PlacedDecor = null);

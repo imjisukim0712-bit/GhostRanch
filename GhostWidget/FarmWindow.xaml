@@ -99,6 +99,8 @@
                     <Grid>
                             <TextBlock x:Name="RosterCountText" FontWeight="Bold" FontSize="12" VerticalAlignment="Center"/>
                             <StackPanel Orientation="Horizontal" HorizontalAlignment="Right">
+                                <Button Content="상점" Height="28" Padding="11,0" Margin="0,0,5,0"
+                                        Background="#6557DB" Foreground="White" BorderThickness="0" FontSize="10" FontWeight="Bold" Cursor="Hand" Click="Shop_Click"/>
                                 <Button Content="뽑기 100" Height="28" Padding="11,0" Margin="0,0,5,0"
                                         Background="#F0A51D" Foreground="White" BorderThickness="0" FontSize="10" FontWeight="Bold" Cursor="Hand" Click="Gacha_Click"/>
                                 <Button Content="휴식 +30" Height="28" Padding="11,0"
