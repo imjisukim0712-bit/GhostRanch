@@ -435,24 +435,31 @@ public partial class MainWindow : Window
         ChooseDestination();
     }
 
-    // The item hops to a few nearby spots while the ghost chases it, then it's trapped back home.
+    // A legible kick-roll-chase cadence, not simultaneous motion: the ghost reaches the item,
+    // visibly kicks it (Bounce as the kick, then the roll starts a beat later), chases the roll
+    // down, and repeats — so it reads as dribbling, not just the item sliding into place once.
     private async Task DribbleSequence(DecorWindow item)
     {
         Rect area = VirtualDesktopBounds;
-        for (int rep = 0; rep < 3; rep++)
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 300);
+        for (int rep = 0; rep < 4; rep++)
         {
+            Bounce();
+            await Task.Delay(110);
             double angle = random.NextDouble() * Math.PI * 2;
-            double distance = 45 + random.NextDouble() * 35;
-            Point hop = new(
+            double distance = 70 + random.NextDouble() * 55;
+            Point roll = new(
                 Math.Clamp(item.Left + Math.Cos(angle) * distance, area.Left + 8, area.Right - item.Width - 8),
                 Math.Clamp(item.Top + Math.Sin(angle) * distance, area.Top + 8, area.Bottom - item.Height - 8));
-            Task ballHop = item.AnimateToAsync(hop, 380);
-            Task ghostChase = AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 380);
-            await Task.WhenAll(ballHop, ghostChase);
-            Bounce();
-            await Task.Delay(160);
+            MainGhostArtwork.SetGaze(roll.X >= item.Left ? 14 : -14, 0);
+            await item.AnimateToAsync(roll, 320);
+            await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
         }
-        await item.AnimateToAsync(item.HomePosition, 420);
+        // One last firm touch, distinct from the dribbling rolls: trap it and send it home.
+        Bounce();
+        await Task.Delay(120);
+        await item.AnimateToAsync(item.HomePosition, 460);
+        await AnimateSelfToAsync(item.GetApproachPoint(Width, Height), 260);
     }
 
     // A shy little peekaboo: the ghost fades to a faint silhouette, then pops back.
@@ -550,13 +557,25 @@ public partial class MainWindow : Window
         else BeginFling();
     }
 
-    // Dropping the ghost on or near a placed decoration plays with it immediately, instead of
-    // waiting on the ambient roam-AI chance in ChooseDestination.
-    private DecorWindow? FindNearbyDecor()
+    private Rect GhostInteractionBounds()
     {
         const double margin = 24;
-        Rect ghostBounds = new(Left - margin, Top - margin, Width + margin * 2, Height + margin * 2);
-        return DecorWindow.PlacedItems.FirstOrDefault(item => ghostBounds.IntersectsWith(item.Bounds));
+        return new Rect(Left - margin, Top - margin, Width + margin * 2, Height + margin * 2);
+    }
+
+    // Dropping the ghost on or near a placed decoration plays with it immediately, instead of
+    // waiting on the ambient roam-AI chance in ChooseDestination.
+    private DecorWindow? FindNearbyDecor() =>
+        DecorWindow.PlacedItems.FirstOrDefault(item => GhostInteractionBounds().IntersectsWith(item.Bounds));
+
+    /// <summary>Bringing the toy to the ghost (dragging a DecorWindow itself) works the same as
+    /// bringing the ghost to the toy. Called by DecorWindow when the player drops it.</summary>
+    internal bool TryPlayWithNearbyDecor(DecorWindow item)
+    {
+        if (resting || decorPlaySessionActive || item.IsPlaying) return false;
+        if (!GhostInteractionBounds().IntersectsWith(item.Bounds)) return false;
+        PlayWithDecor(item);
+        return true;
     }
 
     private void Ghost_MouseLeave(object sender, MouseEventArgs e)
@@ -1182,7 +1201,7 @@ public partial class MainWindow : Window
     internal bool PlaceDecor(int decorIndex)
     {
         if (!ownedDecor.Contains(decorIndex) || IsDecorPlaced(decorIndex)) return false;
-        new DecorWindow(decorIndex, ChooseDecorSpawnPoint(), SaveState).Show();
+        new DecorWindow(this, decorIndex, ChooseDecorSpawnPoint(), SaveState).Show();
         SaveState();
         return true;
     }
@@ -1219,7 +1238,7 @@ public partial class MainWindow : Window
         foreach (DecorPlacementSave placement in pendingDecorPlacements)
         {
             if (IsDecorPlaced(placement.DecorIndex)) continue;
-            new DecorWindow(placement.DecorIndex, new Point(placement.X, placement.Y), SaveState).Show();
+            new DecorWindow(this, placement.DecorIndex, new Point(placement.X, placement.Y), SaveState).Show();
         }
         pendingDecorPlacements = [];
     }

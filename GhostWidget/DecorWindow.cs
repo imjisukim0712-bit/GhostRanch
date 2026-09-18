@@ -16,6 +16,7 @@ internal sealed class DecorWindow : Window
     internal const double Size = 100;
     internal static readonly List<DecorWindow> PlacedItems = [];
 
+    private readonly MainWindow companion;
     private readonly Action onChanged;
     private NativePoint dragCursorStart;
     private Point windowStart;
@@ -30,8 +31,9 @@ internal sealed class DecorWindow : Window
     /// item's position. Dragging is disabled meanwhile so the two don't fight over Left/Top.</summary>
     internal bool IsPlaying { get; set; }
 
-    internal DecorWindow(int decorIndex, Point spawnPoint, Action onChanged)
+    internal DecorWindow(MainWindow companion, int decorIndex, Point spawnPoint, Action onChanged)
     {
+        this.companion = companion;
         DecorIndex = decorIndex;
         this.onChanged = onChanged;
         HomePosition = spawnPoint;
@@ -114,6 +116,8 @@ internal sealed class DecorWindow : Window
         dragging = false;
         ReleaseMouseCapture();
         HomePosition = new Point(Left, Top);
+        // Bringing the toy to the ghost works the same as bringing the ghost to the toy.
+        companion.TryPlayWithNearbyDecor(this);
         onChanged();
     }
 
